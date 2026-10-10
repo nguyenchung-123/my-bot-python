@@ -12,7 +12,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 app = Flask(__name__)
 CORS(app)
 
-# Tên file cơ sở dữ liệu chung cho Admin và Key
 DB_FILE = 'database.json'
 SUPER_ADMIN_ID = 6478447629  # ID Telegram quyền cao nhất
 
@@ -40,53 +39,44 @@ def save_db(data):
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# --- 1. LỆNH CẤP QUYỀN ADMIN (/addadmin) ---
+# --- LỆNH CẤP QUYỀN ADMIN (/addadmin) ---
 async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    
-    # Chỉ Admin quyền cao nhất mới được dùng lệnh này
     if user_id != str(SUPER_ADMIN_ID):
         await update.message.reply_text("❌ Bạn không có quyền sử dụng lệnh này!")
         return
         
     args = context.args
     if not args or not args[0].isdigit():
-        await update.message.reply_text("⚠️ Vui lòng nhập đúng cú pháp: `/addadmin <telegram_id>`", parse_mode="Markdown")
+        await update.message.reply_text("⚠️ Cú pháp: `/addadmin <telegram_id>`", parse_mode="Markdown")
         return
         
     new_admin_id = args[0]
     db = load_db()
-    
     if new_admin_id in db["admins"]:
-        await update.message.reply_text(f"ℹ️ Tài khoản Telegram ID `{new_admin_id}` đã là Admin từ trước!", parse_mode="Markdown")
+        await update.message.reply_text(f"ℹ️ ID `{new_admin_id}` đã là Admin từ trước!", parse_mode="Markdown")
         return
         
     db["admins"].append(new_admin_id)
     save_db(db)
-    
-    await update.message.reply_text(f"✅ Đã cấp quyền Admin thành công cho ID: `{new_admin_id}`", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ Đã cấp quyền Admin cho ID: `{new_admin_id}`", parse_mode="Markdown")
 
-# --- 2. LỆNH TẠO KEY (/createkey) ---
+# --- LỆNH TẠO KEY (/createkey) ---
 async def create_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     db = load_db()
     
-    # Kiểm tra xem người gọi lệnh có nằm trong danh sách Admin không
     if user_id not in db["admins"]:
-        await update.message.reply_text("❌ Bạn không có quyền tạo key! Vui lòng liên hệ Admin cao nhất.")
+        await update.message.reply_text("❌ Bạn không có quyền tạo key!")
         return
         
     args = context.args
-    days = 1
-    if args and args[0].isdigit():
-        days = int(args[0])
+    days = int(args[0]) if args and args[0].isdigit() else 1
     
-    # Tạo chuỗi key ngẫu nhiên
     random_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
     key = f"DRAKON-{random_str[:4]}-{random_str[4:]}"
     expires_at = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
     
-    # Lưu vào database
     db["keys"][key] = {
         "expires_at": expires_at,
         "device_id": None,
@@ -99,14 +89,14 @@ async def create_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ **Tạo Key Thành Công!**\n\n"
         f"🔑 Key: `{key}`\n"
         f"⏳ Thời hạn: {days} ngày\n"
-        f"📅 Hết hạn vào: {expires_at}",
+        f"📅 Hết hạn: {expires_at}",
         parse_mode="Markdown"
     )
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Bot quản lý Key Drakon Head đang hoạt động!")
 
-# --- 3. FLASK API: XÁC THỰC KEY CHO ỨNG DỤNG APK ---
+# --- FLASK API XÁC THỰC ---
 @app.route('/api/verify', methods=['POST'])
 def verify_key():
     data = request.json or {}
@@ -120,19 +110,19 @@ def verify_key():
     keys_db = db["keys"]
     
     if user_key not in keys_db:
-        return jsonify({"status": "error", "message": "Key không tồn tại hoặc không hợp lệ!"}), 404
+        return jsonify({"status": "error", "message": "Key không tồn tại!"}), 404
         
     key_info = keys_db[user_key]
     expires_at = datetime.strptime(key_info['expires_at'], '%Y-%m-%d %H:%M:%S')
     
     if datetime.now() > expires_at:
-        return jsonify({"status": "error", "message": "Key đã hết hạn sử dụng!"}), 400
+        return jsonify({"status": "error", "message": "Key đã hết hạn!"}), 400
         
     if key_info['device_id'] is None:
         key_info['device_id'] = device_id
         save_db(db)
     elif key_info['device_id'] != device_id:
-        return jsonify({"status": "error", "message": "Key này đã được kích hoạt trên thiết bị khác!"}), 400
+        return jsonify({"status": "error", "message": "Key đã kích hoạt trên thiết bị khác!"}), 400
         
     return jsonify({
         "status": "success",
@@ -144,10 +134,9 @@ def verify_key():
 def home():
     return "Drakon Bot & API Server is running smoothly!", 200
 
-# --- 4. KHỞI CHẠY ĐỒNG THỜI BOT VÀ API ---
+# --- KHỞI CHẠY ---
 if __name__ == '__main__':
     import threading
-    
     port = int(os.environ.get("PORT", 5000))
     
     def run_flask():
@@ -156,8 +145,8 @@ if __name__ == '__main__':
     threading.Thread(target=run_flask, daemon=True).start()
     
     TOKEN = "8855559629:AAHSvaBw7YbC1H8dO1bI3T-t54XHbqVDX1s"
-    
     application = ApplicationBuilder().token(TOKEN).build()
+    
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("addadmin", add_admin))
     application.add_handler(CommandHandler("createkey", create_key))
